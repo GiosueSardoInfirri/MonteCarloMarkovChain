@@ -329,6 +329,84 @@ random_steps_mvtnorm = function (func_wanted, theta_init, n_samples, sigma, prin
 
 
 
+# ======================================================================================================================
+# MULTI-DIMENSIONAL MCMC MVTNORM WITH GIBBS SAMPLING
+
+# This function is ment to return the sequence of the samples for a determined function
+random_steps_mvtnorm_gibbs = function (func_wanted, theta_init, n_samples, sigma, print_accept=FALSE) {
+
+    # I create the function to extract the random number
+    generation_s_mvtnorm_gibbs = function (x0, cov) {
+
+        # I use the library method to generate the new point
+        new_value = rmvnorm(1, mean = x0, sigma = cov, method = c("eigen", "svd", "chol"), pre0.9_9994 = FALSE, checkSymmetry = FALSE)
+
+        return(new_value)
+    }
+
+    # And the one to check the value of the quantiles
+    evaluate_Q_mvtnorm_gibbs = function(x0, cov, point) {
+
+        # For the case of the normal distribution
+        sx = dmvnorm(point, mean = x0, sigma = cov, log = FALSE)
+        dx = dmvnorm(x0, mean = point, sigma = cov, log = FALSE)
+
+        return(sx/dx)
+    }
+
+    # Initilalizing the parameters
+    current_theta = theta_init
+    current_function = func_wanted(theta_init)
+    dimensions = length(theta_init)
+    samples = matrix(data = NA, nrow = n_samples, ncol = length(theta_init) + 1)
+
+    # For statistical purposes
+    accepted = 0
+
+    # Evolution loop
+    for (n in 1:n_samples) {
+
+        guessed_theta = current_theta
+
+        # I then can loop on the dimensions of the distribution to allpy the gibbs sampling
+        for (dim in 1:dimensions) {
+
+            # Take a guessed new theta (s in the slides) and evaluate its probability
+            guessed_theta[dim] = generation_s_mvtnorm_gibbs(current_theta, sigma)[dim]
+            guessed_function = func_wanted(guessed_theta)
+
+            # Acceptance conditions
+            Q_ratio = evaluate_Q_mvtnorm_gibbs(current_theta, sigma, guessed_theta)
+            rho = guessed_function/current_function * Q_ratio
+            # cat(guessed_theta, guessed_function, Q_ratio, rho)
+
+            # And then update the general conditions
+            if (rho > runif(1)) {
+                current_theta = guessed_theta
+                current_function = guessed_function
+                accepted = accepted + 1
+            } # else they remain unchanged and then loaded direcctly in the solutions vector
+
+            # Saving the generated samples because R doesn't accept two elements in returns
+            samples[n,] = unlist(c(current_function, current_theta))
+        
+        }
+
+    }
+
+    if(print_accept) {
+        cat("Acceptance rate = ", round(accepted/(n_samples*dimensions)*100, 5), '%\n')
+    }
+
+    return(samples)
+}
+
+
+
+
+
+
+
 
 
 
@@ -348,7 +426,6 @@ show_results = function (mcmc, init, std, step = 0, show_histo = TRUE, show_chai
 
     for (dim in 2:lungh) {
         # The chain plot
-        print(mcmc)
         plot_g = mcmc[seq(0, length(mcmc[,1]), step), dim]
         plot(1:length(plot_g), plot_g, type = 'o', lwd = 1, col = 'black', xlab = 'Iteration', ylab = 'Parameter evolution', 
             main = paste0('Initial value = ', list(init), '     Standard deviation = ', list(std)))
@@ -361,7 +438,7 @@ show_results = function (mcmc, init, std, step = 0, show_histo = TRUE, show_chai
         g_chain = as.mcmc(mcmc[,dim])
         lags = seq(1,length(g_chain),length.out = 100)
         auto_g = autocorr(g_chain, lags=lags)
-        cat(length(lags), length(auto_g))
+        if (length(lags) > length(auto_g)) {lags = head(lags, -1)}
         plot(lags, auto_g, ylim=c(0,1), pch=7, col="navy", xlab="lag", ylab="ACF", cex=1.5, main = paste("Autocorrelation behaviour with sigma =", list(std)))
     }
 
