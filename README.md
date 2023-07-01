@@ -126,7 +126,7 @@ These algorithms are not hard to be implemented in order to have an adaptive MCM
 
 #### AM algorithms
 
-The logical schema for the easiest adaptive MCMC algorithm is:
+The logical schema for the easiest adaptive MCMC algorithm is presented as shown by Andrieu et al. $[2]$ :
 
 1. Initialize $X_0, \mu_0, \Sigma_0$ as initial step, initial mean and initial covariance matrix for the distribution
 2. Then take a sample $X_t$ from the sample distribution $q(X_0, \dots, X_{t-1})$ (usually it is taken $N(0, \Sigma)$ as symmetric simple equation), weighted with the ratio between the functions and the Q-ratio $\alpha(X_{t-1}, Y) = \text{max} \left( 1, \frac{f(Y)}{f(X_{t-1})} \right)$ as:
@@ -135,7 +135,7 @@ $$
 X_t \backsim P^{SRWM}_q = \int  q(z + \mu, \Sigma) dz
 $$
 
-    where I report a semplificatio of the real formula, which most of the physical distributions usually do satisfy
+    where I report a simplification of the real formula, which most of the physical distributions
 
 4. Update the parameters according to the new value taken from the distribution and a non-decreasing non-converging series $\left[ \gamma_i \right]$, as follows:
 
@@ -148,7 +148,7 @@ $$
 
 4. Repeat points 3. and 4. until maximum number of samples
 
-**Useful adaptation:** In many applications, the covariance matrix update $C_i = s_d \cdot \Sigma_i$ follows:
+**Useful adaptation:** In many applications (and mine as well), the mean is corrected recursively and similarly the covariance matrix update $C_i = s_d \cdot \Sigma_i$ follows:
 
 $$
 C_t = 
@@ -160,13 +160,12 @@ $$
 
 And it is found to be $s_d = \frac{2.38}{d^2}$ with $d$ dimension of the sampled distribution $[1]$ and $\epsilon$ is a small parameter, much smaller with respect to the typical dimensionality of the distribution.
 
-Similarly the mean of the sampling distribution changes according to the mean of the previous points.
-
 #### Rao-Blackwellised algorithm
 
 This algorithm is a very slightly modification of the previous one, except for the fact that, in order to choose the new value, it uses a normal sampling distribution $Y \backsim P^{Rao} = N(X_i, \Sigma_i)$ and the value is accepted with probability $\alpha(X_{t-1}, X_t)$, otherwise take $X_t = X_{t-1}$, as done in the Simple MCMC.
 
 ## Bibliography
 
-1. Haario, H., Saksman, E., Tamminen, J.: An adaptive Metropolis algorithm.
-2. Christophe Andrieu, Johannes Thoms: A tutorial on adaptive MCMC
+1. Haario, H., Saksman, E., Tamminen, J.: "An adaptive Metropolis algorithm"
+2. Christophe Andrieu, Johannes Thoms: "A tutorial on adaptive MCMC"
+3. Marko Laine: "Adaptive MCMC Methods with applications in environmental and geophysical models"
