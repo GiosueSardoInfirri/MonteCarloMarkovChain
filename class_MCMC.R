@@ -4,6 +4,7 @@ library(scales)
 library(GoFKernel)
 library(coda)
 library(mvtnorm)
+library(base)
 
 # STORAGE FOR THE FUNCTIONS USED IN THE ANALISYS (FROM SCRATCK)
 
@@ -52,11 +53,14 @@ update_mean_haario = function (old_mean, new_value, step) {
 }
 
 # Recursive rule for the evolution of covariance matrix
-update_covariance_haario = function (old_cov, old_mean, new_value, new_mean, step, dimentions = 1, s_d = 0) {
+update_covariance_haario = function (old_cov, old_mean, new_value, new_mean, step, dimentions = 1, s_d = 0, epsilon = 0.001) {
     if (s_d == 0) {s_d = (2.38)**2/dimentions}
 
-    new_cov = (step-1)*old_cov/step + s_d*(step*outer(old_mean, old_mean, FUN = "*") - (step - 1)*outer(new_mean, new_mean, FUN = "*") +
-              outer(new_value, new_value, FUN = "*") + epsilon*diag(as.integer(dimentions)))/step
+    old_mean_matrix = outer(as.vector(old_mean), as.vector(old_mean), FUN = "*")
+    new_mean_matrix = outer(as.vector(new_mean), as.vector(new_mean), FUN = "*")
+    new_value_matrix = outer(as.vector(new_value), as.vector(new_value), FUN = "*")
+
+    new_cov = (step-1)*old_cov/step + s_d*(step*old_mean_matrix - (step - 1)*new_mean_matrix + new_value_matrix + epsilon*diag(as.integer(dimentions)))/step
     return (new_cov)
 }
 
@@ -462,15 +466,15 @@ random_steps_mvtnorm_gibbs = function (func_wanted, theta_init, n_samples, sigma
 
             # And then update the general conditions
             if (rho > runif(1)) {
-                current_theta = guessed_theta
+                current_theta[dim] = guessed_theta[dim]
                 current_function = guessed_function
                 accepted = accepted + 1
             } # else they remain unchanged and then loaded direcctly in the solutions vector
-
-            # Saving the generated samples because R doesn't accept two elements in returns
-            samples[n,] = unlist(c(current_function, current_theta))
         
         }
+
+        # Saving the generated samples because R doesn't accept two elements in returns
+        samples[n,] = unlist(c(current_function, current_theta))
 
     }
 
@@ -489,16 +493,163 @@ random_steps_mvtnorm_gibbs = function (func_wanted, theta_init, n_samples, sigma
 
 
 
-
 # ======================================================================================================================
 # MULTI-DIMENSIONAL SIMPLE ADAPTIVE MCMC
 
 # This function is ment to return the sequence of the samples for a determined function
-random_steps_AM_simple = function (func_wanted, theta_init, n_samples, sigma, print_accept=FALSE, t_0 = 1000,
+random_steps_simple = function (func_wanted, theta_init, n_samples, sigma, print_accept=FALSE, t_0 = 1000,
                          gamma_function = gamma_series_exp, halved_step = 1000) {
 
     # Then I create the function to extract the random number
-    generation_s_AM_simple = function (x0, cov) {
+    generation_s_simple = function (x0, cov) {
+
+        # I use the library method to generate the new point
+        new_value = rmvnorm(1, mean = x0, sigma = cov, method = c("eigen", "svd", "chol"), pre0.9_9994 = FALSE, checkSymmetry = FALSE)
+
+        return(new_value)
+    }
+
+    # Initilalizing the parameters
+    current_theta = theta_init
+    current_function = func_wanted(theta_init)
+    samples = matrix(data = NA, nrow = n_samples, ncol = length(theta_init) + 1)
+
+    # For statistical purposes
+    accepted = 0
+    mean = rep(0, length(theta_init))
+
+    # Evolution loop
+    for (n in 1:n_samples) {
+
+        # Take a guessed new theta (s in the slides) and evaluate its probability
+        guessed_theta = generation_s_simple(current_theta, sigma)
+        guessed_function = func_wanted(guessed_theta)
+
+        # And then update the general conditions
+        current_theta = guessed_theta
+        current_function = guessed_function
+
+        # Saving the generated samples because R doesn't accept two elements in returns
+        samples[n,] = unlist(c(current_function, current_theta))
+
+        # Here I evaluate the sampled mean and covariance 
+        if (n == t_0) {
+            mean = sampled_mean(series = head(samples[,-1], t_0))
+            sigma = sampled_covariance(series = head(samples[,-1], t_0), mean = mean)
+        } else if (n > t_0) { # and then at every step I update it with the previously declared functions
+            old_mean = mean
+            mean = update_mean_andrieu(old_mean = mean, new_value = current_theta, step = n,
+                                       gamma_function = gamma_function, halved_step = halved_step)
+            sigma = update_cov_andrieu(old_cov = sigma, old_mean = old_mean, new_value = current_theta,
+                                       step = n, gamma_function = gamma_function, halved_step = halved_step)
+        }
+
+    }
+
+    if(print_accept) {
+        cat("Acceptance rate = ", round(accepted/n_samples*100, 5), '%\n')
+        cat("Final mean = ", mean, "\n")
+        cat("Final covariance matrix = \n")
+        print(sigma)
+    }
+
+    return(samples)
+}
+
+
+
+
+
+
+
+
+# ======================================================================================================================
+# MULTI-DIMENSIONAL SIMPLE ADAPTIVE MCMC WITH GIBBS SAMPLING
+
+# This function is ment to return the sequence of the samples for a determined function
+random_steps_simple_gibbs = function (func_wanted, theta_init, n_samples, sigma, print_accept=FALSE, t_0 = 1000,
+                         gamma_function = gamma_series_exp, halved_step = 1000) {
+
+    # Then I create the function to extract the random number
+    generation_s_simple_gibbs = function (x0, cov) {
+
+        # I use the library method to generate the new point
+        new_value = rmvnorm(1, mean = x0, sigma = cov, method = c("eigen", "svd", "chol"), pre0.9_9994 = FALSE, checkSymmetry = FALSE)
+
+        return(new_value)
+    }
+
+    # Initilalizing the parameters
+    current_theta = theta_init
+    current_function = func_wanted(theta_init)
+    dimensions = length(theta_init)
+    samples = matrix(data = NA, nrow = n_samples, ncol = length(theta_init) + 1)
+
+    # For statistical purposes
+    accepted = 0
+    mean = rep(0, length(theta_init))
+
+    # Evolution loop
+    for (n in 1:n_samples) {
+
+        guessed_theta = current_theta
+
+        # I then can loop on the dimensions of the distribution to allpy the gibbs sampling
+        for (dim in 1:dimensions) {
+
+            # Take a guessed new theta (s in the slides) and evaluate its probability
+            guessed_theta[dim] = generation_s_simple_gibbs(current_theta, sigma)[dim]
+            guessed_function = func_wanted(guessed_theta)
+
+            # And then update the general conditions
+            current_theta = guessed_theta
+            current_function = guessed_function    
+        }
+
+        # Saving the generated samples because R doesn't accept two elements in returns
+        samples[n,] = unlist(c(current_function, current_theta))
+
+        # Here I evaluate the sampled mean and covariance 
+        if (n == t_0) {
+            mean = sampled_mean(series = head(samples[,-1], t_0))
+            sigma = sampled_covariance(series = head(samples[,-1], t_0), mean = mean)
+        } else if (n > t_0) { # and then at every step I update it with the previously declared functions
+            old_mean = mean
+            mean = update_mean_andrieu(old_mean = mean, new_value = current_theta, step = n,
+                                       gamma_function = gamma_function, halved_step = halved_step)
+            sigma = update_cov_andrieu(old_cov = sigma, old_mean = old_mean, new_value = current_theta,
+                                       step = n, gamma_function = gamma_function, halved_step = halved_step)
+        }
+
+
+    }
+
+    if(print_accept) {
+        cat("Acceptance rate = ", round(accepted/(n_samples*dimensions)*100, 5), '%\n')
+        cat("Final mean = ", mean, "\n")
+        cat("Final covariance matrix = \n")
+        print(sigma)
+    }
+
+    return(samples)
+}
+
+
+
+
+
+
+
+
+
+# ======================================================================================================================
+# MULTI-DIMENSIONAL HAARIO MCMC
+
+# This function is ment to return the sequence of the samples for a determined function
+random_steps_haario = function (func_wanted, theta_init, n_samples, sigma, print_accept=FALSE, t_0 = 1000, eps = 0.001) {
+
+    # Then I create the function to extract the random number
+    generation_s_haario = function (x0, cov) {
 
         # I use the library method to generate the new point
         new_value = rmvnorm(1, mean = x0, sigma = cov, method = c("eigen", "svd", "chol"), pre0.9_9994 = FALSE, checkSymmetry = FALSE)
@@ -507,7 +658,7 @@ random_steps_AM_simple = function (func_wanted, theta_init, n_samples, sigma, pr
     }
 
     # And the one to check the value of the quantiles
-    evaluate_Q_AM_simple = function(x0, cov, point) {
+    evaluate_Q_haario = function(x0, cov, point) {
 
         # For the case of the normal distribution
         sx = dmvnorm(point, mean = x0, sigma = cov, log = FALSE)
@@ -529,11 +680,196 @@ random_steps_AM_simple = function (func_wanted, theta_init, n_samples, sigma, pr
     for (n in 1:n_samples) {
 
         # Take a guessed new theta (s in the slides) and evaluate its probability
-        guessed_theta = generation_s_AM_simple(current_theta, sigma)
+        guessed_theta = generation_s_haario(current_theta, sigma)
         guessed_function = func_wanted(guessed_theta)
 
         # Acceptance conditions
-        Q_ratio = 1 #evaluate_Q_AM_simple(current_theta, sigma, guessed_theta)
+        Q_ratio = 1 #evaluate_Q_haario(current_theta, sigma, guessed_theta)
+        rho = guessed_function/current_function * Q_ratio
+        # cat(guessed_theta, guessed_function, Q_ratio, rho, "\n")
+
+        # And then update the general conditions
+        if (rho > runif(1)) {
+            current_theta = guessed_theta
+            current_function = guessed_function
+            accepted = accepted + 1
+        } # else they remain unchanged and then loaded direcctly in the solutions vector
+
+        # Saving the generated samples because R doesn't accept two elements in returns
+        samples[n,] = unlist(c(current_function, current_theta))
+
+        # Here I evaluate the sampled mean and covariance 
+        if (n == t_0) {
+            mean = sampled_mean(series = head(samples[,-1], t_0))
+            sigma = sampled_covariance(series = head(samples[,-1], t_0), mean = mean)
+        } else if (n > t_0) { # and then at every step I update it with the previously declared functions
+            old_mean = mean
+            mean = update_mean_haario (old_mean = mean, new_value = current_theta, step = n)
+            sigma = update_covariance_haario(old_cov = sigma, old_mean = old_mean, new_value = current_theta, new_mean = mean,
+                                             step = n, dimentions = length(theta_init), epsilon = eps)
+        }
+
+    }
+
+    if(print_accept) {
+        cat("Acceptance rate = ", round(accepted/n_samples*100, 5), '%\n')
+        cat("Final mean = ", mean, "\n")
+        cat("Final covariance matrix = \n")
+        print(sigma)
+    }
+
+    return(samples)
+}
+
+
+
+
+
+
+
+
+
+# ======================================================================================================================
+# MULTI-DIMENSIONAL HAARIO MCMC WITH GIBBS SAMPLING
+
+# This function is ment to return the sequence of the samples for a determined function
+random_steps_haario_gibbs = function (func_wanted, theta_init, n_samples, sigma, print_accept=FALSE, t_0 = 1000, eps = 0.001) {
+
+    # Then I create the function to extract the random number
+    generation_s_haario_gibbs = function (x0, cov) {
+
+        # I use the library method to generate the new point
+        new_value = rmvnorm(1, mean = x0, sigma = cov, method = c("eigen", "svd", "chol"), pre0.9_9994 = FALSE, checkSymmetry = FALSE)
+
+        return(new_value)
+    }
+
+    # And the one to check the value of the quantiles
+    evaluate_Q_haario_gibbs = function(x0, cov, point) {
+
+        # For the case of the normal distribution
+        sx = dmvnorm(point, mean = x0, sigma = cov, log = FALSE)
+        dx = dmvnorm(x0, mean = point, sigma = cov, log = FALSE)
+
+        return(sx/dx)
+    }
+
+    # Initilalizing the parameters
+    current_theta = theta_init
+    current_function = func_wanted(theta_init)
+    dimensions = length(theta_init)
+    samples = matrix(data = NA, nrow = n_samples, ncol = length(theta_init) + 1)
+
+    # For statistical purposes
+    accepted = 0
+    mean = rep(0, length(theta_init))
+
+    # Evolution loop
+    for (n in 1:n_samples) {
+
+        guessed_theta = current_theta
+
+        # I then can loop on the dimensions of the distribution to allpy the gibbs sampling
+        for (dim in 1:dimensions) {
+
+            # Take a guessed new theta (s in the slides) and evaluate its probability
+            guessed_theta[dim] = generation_s_haario_gibbs(current_theta, sigma)[dim]
+            guessed_function = func_wanted(guessed_theta)
+
+            # Acceptance conditions
+            Q_ratio = 1#evaluate_Q_haario_gibbs(current_theta, sigma, guessed_theta)
+            rho = guessed_function/current_function * Q_ratio
+            # cat(guessed_theta, guessed_function, Q_ratio, rho, "\n")
+
+            # And then update the general conditions
+            if (rho > runif(1)) {
+                current_theta[dim] = guessed_theta[dim]
+                current_function = guessed_function
+                accepted = accepted + 1
+            } # else they remain unchanged and then loaded direcctly in the solutions vector
+    
+        }
+
+        # Saving the generated samples because R doesn't accept two elements in returns
+        samples[n,] = unlist(c(current_function, current_theta))
+
+        # Here I evaluate the sampled mean and covariance 
+        if (n == t_0) {
+            mean = sampled_mean(series = head(samples[,-1], t_0))
+            sigma = sampled_covariance(series = head(samples[,-1], t_0), mean = mean)
+        } else if (n > t_0) { # and then at every step I update it with the previously declared functions
+            old_mean = mean
+            mean = update_mean_haario (old_mean = mean, new_value = current_theta, step = n)
+            sigma = update_covariance_haario(old_cov = sigma, old_mean = old_mean, new_value = current_theta, new_mean = mean,
+                                             step = n, dimentions = length(theta_init), epsilon = eps)
+        }
+
+
+    }
+
+    if(print_accept) {
+        cat("Acceptance rate = ", round(accepted/(n_samples*dimensions)*100, 5), '%\n')
+        cat("Final mean = ", mean, "\n")
+        cat("Final covariance matrix = \n")
+        print(sigma)
+    }
+
+    return(samples)
+}
+
+
+
+
+
+
+
+
+
+
+# ======================================================================================================================
+# MULTI-DIMENSIONAL RAO MCMC
+
+# This function is ment to return the sequence of the samples for a determined function
+random_steps_AM_rao = function (func_wanted, theta_init, n_samples, sigma, print_accept=FALSE, t_0 = 1000,
+                         gamma_function = gamma_series_exp, halved_step = 1000) {
+
+    # Then I create the function to extract the random number
+    generation_s_AM_rao = function (x0, cov) {
+
+        # I use the library method to generate the new point
+        new_value = rmvnorm(1, mean = x0, sigma = cov, method = c("eigen", "svd", "chol"), pre0.9_9994 = FALSE, checkSymmetry = FALSE)
+
+        return(new_value)
+    }
+
+    # And the one to check the value of the quantiles
+    evaluate_Q_AM_rao = function(x0, cov, point) {
+
+        # For the case of the normal distribution
+        sx = dmvnorm(point, mean = x0, sigma = cov, log = FALSE)
+        dx = dmvnorm(x0, mean = point, sigma = cov, log = FALSE)
+
+        return(sx/dx)
+    }
+
+    # Initilalizing the parameters
+    current_theta = theta_init
+    current_function = func_wanted(theta_init)
+    samples = matrix(data = NA, nrow = n_samples, ncol = length(theta_init) + 1)
+
+    # For statistical purposes
+    accepted = 0
+    mean = rep(0, length(theta_init))
+
+    # Evolution loop
+    for (n in 1:n_samples) {
+
+        # Take a guessed new theta (s in the slides) and evaluate its probability
+        guessed_theta = generation_s_AM_rao(current_theta, sigma)
+        guessed_function = func_wanted(guessed_theta)
+
+        # Acceptance conditions
+        Q_ratio = 1 #evaluate_Q_AM_rao(current_theta, sigma, guessed_theta)
         rho = guessed_function/current_function * Q_ratio
         # cat(guessed_theta, guessed_function, Q_ratio, rho, "\n")
 
@@ -580,14 +916,14 @@ random_steps_AM_simple = function (func_wanted, theta_init, n_samples, sigma, pr
 
 
 # ======================================================================================================================
-# MULTI-DIMENSIONAL SIMPLE ADAPTIVE MCMC WITH GIBBS SAMPLING
+# MULTI-DIMENSIONAL RAO MCMC WITH GIBBS SAMPLING
 
 # This function is ment to return the sequence of the samples for a determined function
-random_steps_AM_simple_gibbs = function (func_wanted, theta_init, n_samples, sigma, print_accept=FALSE, t_0 = 1000,
+random_steps_AM_rao_gibbs = function (func_wanted, theta_init, n_samples, sigma, print_accept=FALSE, t_0 = 1000,
                          gamma_function = gamma_series_exp, halved_step = 1000) {
 
     # Then I create the function to extract the random number
-    generation_s_AM_simple_gibbs = function (x0, cov) {
+    generation_s_AM_rao_gibbs = function (x0, cov) {
 
         # I use the library method to generate the new point
         new_value = rmvnorm(1, mean = x0, sigma = cov, method = c("eigen", "svd", "chol"), pre0.9_9994 = FALSE, checkSymmetry = FALSE)
@@ -596,7 +932,7 @@ random_steps_AM_simple_gibbs = function (func_wanted, theta_init, n_samples, sig
     }
 
     # And the one to check the value of the quantiles
-    evaluate_Q_AM_simple_gibbs = function(x0, cov, point) {
+    evaluate_Q_AM_rao_gibbs = function(x0, cov, point) {
 
         # For the case of the normal distribution
         sx = dmvnorm(point, mean = x0, sigma = cov, log = FALSE)
@@ -624,25 +960,25 @@ random_steps_AM_simple_gibbs = function (func_wanted, theta_init, n_samples, sig
         for (dim in 1:dimensions) {
 
             # Take a guessed new theta (s in the slides) and evaluate its probability
-            guessed_theta[dim] = generation_s_AM_simple_gibbs(current_theta, sigma)[dim]
+            guessed_theta[dim] = generation_s_AM_rao_gibbs(current_theta, sigma)[dim]
             guessed_function = func_wanted(guessed_theta)
 
             # Acceptance conditions
-            Q_ratio = evaluate_Q_AM_simple_gibbs(current_theta, sigma, guessed_theta)
+            Q_ratio = 1#evaluate_Q_AM_rao_gibbs(current_theta, sigma, guessed_theta)
             rho = guessed_function/current_function * Q_ratio
-            # cat(guessed_theta, guessed_function, Q_ratio, rho)
+            # cat(guessed_theta, guessed_function, Q_ratio, rho, "\n")
 
             # And then update the general conditions
             if (rho > runif(1)) {
-                current_theta = guessed_theta
+                current_theta[dim] = guessed_theta[dim]
                 current_function = guessed_function
                 accepted = accepted + 1
             } # else they remain unchanged and then loaded direcctly in the solutions vector
-
-            # Saving the generated samples because R doesn't accept two elements in returns
-            samples[n,] = unlist(c(current_function, current_theta))
     
         }
+
+        # Saving the generated samples because R doesn't accept two elements in returns
+        samples[n,] = unlist(c(current_function, current_theta))
 
         # Here I evaluate the sampled mean and covariance 
         if (n == t_0) {
@@ -677,6 +1013,213 @@ random_steps_AM_simple_gibbs = function (func_wanted, theta_init, n_samples, sig
 
 
 
+
+# ======================================================================================================================
+# MULTI-DIMENSIONAL GLOBAL ADAPTIVE MCMC
+
+# This function is ment to return the sequence of the samples for a determined function
+random_steps_global = function (func_wanted, theta_init, n_samples, sigma, print_accept=FALSE, t_0 = 1000,
+                         gamma_function = gamma_series_exp, halved_step = 1000) {
+
+    # Then I create the function to extract the random number
+    generation_s_global = function (x0, cov) {
+
+        # I use the library method to generate the new point
+        new_value = rmvnorm(1, mean = x0, sigma = cov, method = c("eigen", "svd", "chol"), pre0.9_9994 = FALSE, checkSymmetry = FALSE)
+
+        return(new_value)
+    }
+
+    # And the one to check the value of the quantiles
+    evaluate_Q_global = function(x0, cov, point) {
+
+        # For the case of the normal distribution
+        sx = dmvnorm(point, mean = x0, sigma = cov, log = FALSE)
+        dx = dmvnorm(x0, mean = point, sigma = cov, log = FALSE)
+
+        return(sx/dx)
+    }
+
+    # Initilalizing the parameters
+    current_theta = theta_init
+    current_function = func_wanted(theta_init)
+    samples = matrix(data = NA, nrow = n_samples, ncol = length(theta_init) + 1)
+
+    # For statistical purposes
+    accepted = 0
+    rho_mean = 0 # The mean of the alphas in README
+    lambda = 1
+    mean = rep(0, length(theta_init))
+
+    # Evolution loop
+    for (n in 1:n_samples) {
+
+        # Take a guessed new theta (s in the slides) and evaluate its probability
+        used_sigma = exp(lambda)*sigma
+        if (!isSymmetric(used_sigma)) {
+            print("FALSE")
+        }
+        guessed_theta = generation_s_global(current_theta, used_sigma)
+        guessed_function = func_wanted(guessed_theta)
+
+        # Acceptance conditions
+        Q_ratio = 1 #evaluate_Q_global(current_theta, sigma, guessed_theta)
+        rho = guessed_function/current_function * Q_ratio
+        # cat(guessed_theta, guessed_function, Q_ratio, rho, "\n")
+
+        # And then update the general conditions
+        if (rho > runif(1)) {
+            current_theta = guessed_theta
+            current_function = guessed_function
+            accepted = accepted + 1
+        } # else they remain unchanged and then loaded direcctly in the solutions vector
+
+        # Saving the generated samples because R doesn't accept two elements in returns
+        samples[n,] = unlist(c(current_function, current_theta))
+
+        # Here I evaluate the sampled mean and covariance
+        rho_mean = (rho_mean*n + rho)/(n + 1)
+        if (n == t_0) {
+            mean = sampled_mean(series = head(samples[,-1], t_0))
+            sigma = sampled_covariance(series = head(samples[,-1], t_0), mean = mean)
+        } else if (n > t_0) { # and then at every step I update it with the previously declared functions
+            old_mean = mean
+            mean = update_mean_andrieu(old_mean = mean, new_value = current_theta, step = n,
+                                       gamma_function = gamma_function, halved_step = halved_step)
+            sigma = update_cov_andrieu(old_cov = sigma, old_mean = old_mean, new_value = current_theta,
+                                       step = n, gamma_function = gamma_function, halved_step = halved_step)
+            lambda = lambda + gamma_function(halved_step = halved_step, step = n)*(rho - rho_mean) # it is the logarithm
+        }
+
+    }
+
+    if(print_accept) {
+        cat("Acceptance rate = ", round(accepted/n_samples*100, 5), '%\n')
+        cat("Final mean = ", mean, "\n")
+        cat("Final lambda = ", lambda, "\n")
+        cat("Final covariance matrix = \n")
+        print(sigma)
+    }
+
+    return(samples)
+}
+
+
+
+
+
+
+
+
+# ======================================================================================================================
+# MULTI-DIMENSIONAL GLOBAL ADAPTIVE MCMC WITH GIBBS SAMPLING
+
+# This function is ment to return the sequence of the samples for a determined function
+random_steps_global_gibbs = function (func_wanted, theta_init, n_samples, sigma, print_accept=FALSE, t_0 = 1000,
+                         gamma_function = gamma_series_exp, halved_step = 1000) {
+
+    # Then I create the function to extract the random number
+    generation_s_global_gibbs = function (x0, cov) {
+
+        # I use the library method to generate the new point
+        new_value = rmvnorm(1, mean = x0, sigma = cov, method = c("eigen", "svd", "chol"), pre0.9_9994 = FALSE, checkSymmetry = FALSE)
+
+        return(new_value)
+    }
+
+    # And the one to check the value of the quantiles
+    evaluate_Q_global_gibbs = function(x0, cov, point) {
+
+        # For the case of the normal distribution
+        sx = dmvnorm(point, mean = x0, sigma = cov, log = FALSE)
+        dx = dmvnorm(x0, mean = point, sigma = cov, log = FALSE)
+
+        return(sx/dx)
+    }
+
+    # Initilalizing the parameters
+    current_theta = theta_init
+    current_function = func_wanted(theta_init)
+    dimensions = length(theta_init)
+    samples = matrix(data = NA, nrow = n_samples, ncol = length(theta_init) + 1)
+
+    # For statistical purposes
+    accepted = 0
+    rho_mean = 0 # The mean of the alphas in README
+    lambda = 1
+    mean = rep(0, length(theta_init))
+
+    # Evolution loop
+    for (n in 1:n_samples) {
+
+        # Take a guessed new theta (s in the slides) and evaluate its probability
+        used_sigma = exp(lambda)*sigma
+        if (!isSymmetric(used_sigma)) {
+            print("FALSE")
+        }
+
+        guessed_theta = current_theta
+
+        # I then can loop on the dimensions of the distribution to allpy the gibbs sampling
+        for (dim in 1:dimensions) {
+
+            # Take a guessed new theta (s in the slides) and evaluate its probability
+            guessed_theta[dim] = generation_s_global_gibbs(current_theta, used_sigma)[dim]
+            guessed_function = func_wanted(guessed_theta)
+
+            # Acceptance conditions
+            Q_ratio = 1 #evaluate_Q_global_gibbs(current_theta, sigma, guessed_theta)
+            rho = guessed_function/current_function * Q_ratio
+            # cat(guessed_theta, guessed_function, Q_ratio, rho, "\n")
+
+            # And then update the general conditions
+            if (rho > runif(1)) {
+                current_theta[dim] = guessed_theta[dim]
+                current_function = guessed_function
+                accepted = accepted + 1
+            } # else they remain unchanged and then loaded direcctly in the solutions vector
+    
+        }
+
+        # Saving the generated samples because R doesn't accept two elements in returns
+        samples[n,] = unlist(c(current_function, current_theta))
+
+        # Here I evaluate the sampled mean and covariance
+        rho_mean = (rho_mean*n + rho)/(n + 1)
+        if (n == t_0) {
+            mean = sampled_mean(series = head(samples[,-1], t_0))
+            sigma = sampled_covariance(series = head(samples[,-1], t_0), mean = mean)
+        } else if (n > t_0) { # and then at every step I update it with the previously declared functions
+            old_mean = mean
+            mean = update_mean_andrieu(old_mean = mean, new_value = current_theta, step = n,
+                                       gamma_function = gamma_function, halved_step = halved_step)
+            sigma = update_cov_andrieu(old_cov = sigma, old_mean = old_mean, new_value = current_theta,
+                                       step = n, gamma_function = gamma_function, halved_step = halved_step)
+            lambda = lambda + gamma_function(halved_step = halved_step, step = n)*(rho - rho_mean) # it is the logarithm
+        }
+
+    }
+
+    if(print_accept) {
+        cat("Acceptance rate = ", round(accepted/(n_samples*dimensions)*100, 5), '%\n')
+        cat("Final mean = ", mean, "\n")
+        cat("Final lambda = ", lambda, "\n")
+        cat("Final covariance matrix = \n")
+        print(sigma)
+    }
+
+    return(samples)
+}
+
+
+
+
+
+
+
+
+
+
 # ======================================================================================================================
 # GRAPHICAL STUFF
 
@@ -685,7 +1228,7 @@ show_results = function (mcmc, init, std, step = 0, show_histo = TRUE, show_chai
     # check for the dimension of the distribution
     lungh = as.integer(length(mcmc[1,]))
     num_plots = as.integer(show_histo + show_chain + show_lags)
-    if (step == 0) {step = as.integer(length(mcmc[,1])/100)}
+    if (step == 0) {step = as.integer(length(mcmc[,1])/100)} # It is prefixed to 100 total shown steps
 
     # Plotting every dimension of the plot
     par(mfrow=c(lungh-1, num_plots), oma = c(0, 0, 0, 0))
