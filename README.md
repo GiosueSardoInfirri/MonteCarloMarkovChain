@@ -131,11 +131,11 @@ The logical schema for the easiest adaptive MCMC algorithm is presented as shown
 1. Initialize $X_0, \mu_0, \Sigma_0$ as initial step, initial mean and initial covariance matrix for the distribution
 2. Then take a sample $X_t$ from the sample distribution $q(X_0, \dots, X_{t-1})$ (usually it is taken $N(0, \Sigma)$ as symmetric simple equation), weighted with the ratio between the functions and the Q-ratio $\alpha(X_{t-1}, Y)$ as:
 
-$$
+```math
 X_t \backsim P^{SRWM}_q = \int_{A-X_{t-1}} \alpha(X_{t-1}, X_{t-1} + z) q(z \ | \ \mu, \Sigma) dz + \mathbb{I}(X_{t-1} \in A)\int_{X-X_{t-1}} (1 - \alpha(X_{t-1}, X_{t-1} + z)) q(z \ | \ \mu, \Sigma) dz
-$$
+```
 
-    where I report a simplification of the real formula, which most of the physical distributions
+where I report a simplification of the real formula, which most of the physical distributions
 
 4. Update the parameters according to the new value taken from the distribution and a non-decreasing non-converging series $\left[ \gamma_i \right]$, as follows:
 
@@ -192,7 +192,7 @@ In order to check the improvements of the introduced implementations, I run all 
 
 I underline the fact that, using a gaussian sampling function, the acceptance rate wanted is the one approximating 68,3%, because of the fact that one should expect to switch to the new point according to $1\sigma$ of the gaussian distributioin.
 
-#### 1. 3D Gaussian with good sample distribution (proportionate)
+#### 1. 3D Gaussian with good proportionate sample distribution (```cases/case_proportionate.ipynb```)
 
 For a gaussian in three dimentions one sees that the fastest and most efficient way to retrieve a good result is using the "mvtnorm" function, when initializing with a proper correlation matrix. This is due to the fact that there is no need for the algorithms to improve the sampling distribution, because and the well-initialized distribution is rewarded: this applies always when initializing a distribution with a defined central shape and the right dimentions for the covariance matrix.
 
@@ -209,7 +209,7 @@ For a gaussian in three dimentions one sees that the fastest and most efficient 
 
 $* = $ the results strongly depends on the run (it can have a little bit of correlation, which vanishes when using )
 
-#### 2. 3D Gaussian with small sample distribution
+#### 2. 3D Gaussian with small sample distribution (```cases/case_small.ipynb```)
 
 In order to see the difficulties of these algorithms, I take a smaller covariance matrix: this is a problem for all the algorithms that don't allow a reshape of the matrix, because they al will result in a high autocorrelation.
 
@@ -224,7 +224,7 @@ In order to see the difficulties of these algorithms, I take a smaller covarianc
 | Global        | 50                  | 60              | first 20%/zero *          | cresty       |
 | Global Gibbs  | 65                  | 100             | zero                      | good         |
 
-#### 3. 2D Gaussian times 1D Cauchy
+#### 3. 2D Gaussian times 1D Cauchy (```cases/case_2g_1c.ipynb```)
 
 In order to stress the algorithms giving them different hard distributions, I decided to take a two-cauchy distribution (with two maxima) in order to see how it would have shaped the covariance distributions, in order to look for these two different maxima in the 3D space.
 
@@ -239,7 +239,7 @@ In order to stress the algorithms giving them different hard distributions, I de
 | Global        | 55                  | 70              | first 20%/good *                   | peaked                 |
 | Global Gibbs  | 70                  | 100             | zero                               | good                   |
 
-#### 4. 1D Gaussian times 2D Cauchy
+#### 4. 1D Gaussian times 2D Cauchy (```cases/case_1g_2c.ipynb```)
 
 To check if the algorithm was clever enough, I tried to enlarge the Cauchy distribution in another dimention, resulting in similar performances (even though I expected them to be worse)
 
@@ -254,7 +254,7 @@ To check if the algorithm was clever enough, I tried to enlarge the Cauchy distr
 | Global        | 45                  | 70              | zero                 | cresty                    |
 | Global Gibbs  | 75                  | 90              | zero                 | good                      |
 
-#### 5. 5D Gaussian times 1D Cauchy
+#### 5. 5D Gaussian times 1D Cauchy (```cases/case_5g.ipynb```)
 
 I also tried to increase the number of dimentions and the algorithm seemd to be pretty robust for central distributions (and a little less for those with multiple peaks)
 
