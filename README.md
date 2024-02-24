@@ -1,6 +1,6 @@
 # MonteCarloMarkovChain
 
-This is the final project of the Advanced Statistics for Physics Analysis course. It is an analysis and implementation of some Adaptive Monte Carlo Markov Chains (MCMC)
+This is the final project of the Advanced Statistics for Physics Analysis course. It is an analysis and implementation of some Adaptive Monte Carlo Markov Chains (MCMC). The main code containing all the useful functions is ``MCMC.R`` file: these functions are used to generate the results in the many notebooks.
 
 ## Normal multi-dimensional MCMC
 
@@ -110,7 +110,7 @@ These results have been retrieved running the program three times with different
 
 - 1D is very performing, but has the limit of the dimensions
 - 3D Metropolis has a low acceptance rate: the gaussian for the selection of the new point is very wide, resulting in a small acceptance rate
-- 3D Gibbs returns to the higher acceptance rate found in the 1D case (since it moves in 1D)
+- 3D Gibbs returns to the higher acceptance rate found in the 1D case, since it moves in 1D (file )
 - 3D mvtnorm gives the possibility of having covariance, but at the cost of time speed and acceptance rate (it is done without Gibbs sampling, in order to spare time and computational resources, otherwise they would scale linearly with the number of dimentions)
 - 3D mvtnorm Gibbs, as done in the previous case, increases the acceptance rate at the cost of time
 
@@ -118,13 +118,15 @@ All of them have a low Autocorrelation due to the very wide sampling ditribution
 
 **Attention:** I cannot use these algorithms for **adaptive MCMC**, because they don't allow to shape properly the multi-dimensional gaussian, therefore I need an algorithm that uses directly the covariance matrix
 
+The code for generating such analysis and plots is available in  ``MCMC/MCMC_Gibbs.ipynb`` for the usual implementation and in ``MCMC/MCMC_mnorm.ipynb`` for the mvnorm package implementation.
+
 ## Adaptive MCMC
 
 There are a lot of different implementations for an adaptive MCMC, which all have strenghts and weatknesses that I want to analize: all of them do have a change in the sampling distribution parameters along the chain.
 
 These algorithms are not hard to be implemented in order to have an adaptive MCMC, as presented by Haario et al. $[1]$ and well studied in many works. The idea behind them is to sample from a very wide multi-dimentional distribution at the beginning, then to update this covariance matrix, with always small corrections as well as marginalization factors in order not to have an exploding matrix in time.
 
-#### Adaptive Metropolis algorithms (AM)
+#### Adaptive Metropolis algorithms (AM, in file ``MCMC/MCMC_AM_simple.ipynb``)
 
 The logical schema for the easiest adaptive MCMC algorithm is presented as shown by Andrieu et al. $[2]$ :
 
@@ -150,7 +152,7 @@ $$
 
 NB: This implementation is therefore useless, because of the fact that it is hard to perform the computations and obtain a shape for $P^{SRWM}_q$ and then one has to implement some approximations in order to retrieve a consistent chain. In my code I therefore show that this implementation (introducing a semplification) is useless.
 
-#### Rao-Blackwellised algorithm (Rao)
+#### Rao-Blackwellised algorithm (Rao, in file ``MCMC/MCMC_AM_rao.ipynb``)
 
 This algorithm is a very slightly modification of the previous one: here, in order to solve the problem for the choice of the new value, it uses a normal sampling distribution $Y \backsim P^{Rao} = N(X_i, \Sigma_i)$ and the value is accepted with probability $\alpha(X_{t-1}, X_t)$, otherwise take $X_t = X_{t-1}$, as done in the Simple MCMC.
 
@@ -168,7 +170,7 @@ $$
 
 And it is found to be $s_d = \frac{2.38}{d^2}$ with $d$ dimension of the sampled distribution $[1]$ and $\epsilon$ is a small parameter, much smaller with respect to the typical dimensionality of the distribution.
 
-#### Global adaptive scaling algorithm (GAM)
+#### Global adaptive scaling algorithm (GAM, in file ``MCMC/MCMC_AM_global.ipynb``)
 
 In the previous implementations, the covariance matrix was able to reshape itself, but it was not so able to change the variance in the many dimentions, leading to some problems in the increase of the acceptance rate. In the global-adaptive scaling algorithm there is the introduction of a global parameter that is able to scale the covariance matrix: $\lambda_i$, which is taken into account when evaluating $Y \backsim P^{GAM} = N(X_i, \lambda_i \cdot \Sigma_i)$
 
@@ -192,7 +194,7 @@ In order to check the improvements of the introduced implementations, I run all 
 
 I underline the fact that, using a gaussian sampling function, the acceptance rate wanted is the one approximating 68,3%, because of the fact that one should expect to switch to the new point according to $1\sigma$ of the gaussian distributioin.
 
-#### 1. 3D Gaussian with good proportionate sample distribution (```cases/case_proportionate.ipynb```)
+#### 1. 3D Gaussian with good proportionate sample distribution (``cases/case_proportionate.ipynb``)
 
 For a gaussian in three dimentions one sees that the fastest and most efficient way to retrieve a good result is using the "mvtnorm" function, when initializing with a proper correlation matrix. This is due to the fact that there is no need for the algorithms to improve the sampling distribution, because and the well-initialized distribution is rewarded: this applies always when initializing a distribution with a defined central shape and the right dimentions for the covariance matrix.
 
@@ -209,7 +211,7 @@ For a gaussian in three dimentions one sees that the fastest and most efficient 
 
 $* = $ the results strongly depends on the run (it can have a little bit of correlation, which vanishes when using )
 
-#### 2. 3D Gaussian with small sample distribution (```cases/case_small.ipynb```)
+#### 2. 3D Gaussian with small sample distribution (``cases/case_small.ipynb``)
 
 In order to see the difficulties of these algorithms, I take a smaller covariance matrix: this is a problem for all the algorithms that don't allow a reshape of the matrix, because they al will result in a high autocorrelation.
 
@@ -224,7 +226,7 @@ In order to see the difficulties of these algorithms, I take a smaller covarianc
 | Global        | 50                  | 60              | first 20%/zero *          | cresty       |
 | Global Gibbs  | 65                  | 100             | zero                      | good         |
 
-#### 3. 2D Gaussian times 1D Cauchy (```cases/case_2g_1c.ipynb```)
+#### 3. 2D Gaussian times 1D Cauchy (``cases/case_2g_1c.ipynb``)
 
 In order to stress the algorithms giving them different hard distributions, I decided to take a two-cauchy distribution (with two maxima) in order to see how it would have shaped the covariance distributions, in order to look for these two different maxima in the 3D space.
 
@@ -239,7 +241,7 @@ In order to stress the algorithms giving them different hard distributions, I de
 | Global        | 55                  | 70              | first 20%/good *                   | peaked                 |
 | Global Gibbs  | 70                  | 100             | zero                               | good                   |
 
-#### 4. 1D Gaussian times 2D Cauchy (```cases/case_1g_2c.ipynb```)
+#### 4. 1D Gaussian times 2D Cauchy (``cases/case_1g_2c.ipynb``)
 
 To check if the algorithm was clever enough, I tried to enlarge the Cauchy distribution in another dimention, resulting in similar performances (even though I expected them to be worse)
 
@@ -254,7 +256,7 @@ To check if the algorithm was clever enough, I tried to enlarge the Cauchy distr
 | Global        | 45                  | 70              | zero                 | cresty                    |
 | Global Gibbs  | 75                  | 90              | zero                 | good                      |
 
-#### 5. 5D Gaussian times 1D Cauchy (```cases/case_5g.ipynb```)
+#### 5. 5D Gaussian times 1D Cauchy (``cases/case_5g.ipynb``)
 
 I also tried to increase the number of dimentions and the algorithm seemd to be pretty robust for central distributions (and a little less for those with multiple peaks)
 
